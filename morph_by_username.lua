@@ -117,26 +117,59 @@ local function setStatus(msg, color)
 end
 
 local function getUserIdFromUsername(username)
-	local success, result = pcall(function()
-		return HttpService:GetAsync("https://api.roblox.com/users/get-by-username?username=" .. HttpService:UrlEncode(username))
+	-- Try multiple API methods to get user ID
+	
+	-- Method 1: Try the standard get-by-username endpoint
+	local success1, result1 = pcall(function()
+		return HttpService:GetAsync("https://api.roblox.com/users/get-by-username?username=" .. HttpService:UrlEncode(username), true)
 	end)
 	
-	if success then
-		local data = HttpService:JSONDecode(result)
-		if data.id then
+	if success1 then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(result1)
+		end)
+		if ok and data and data.id then
 			return data.id
 		end
 	end
+	
+	-- Method 2: Try users/search endpoint
+	local success2, result2 = pcall(function()
+		return HttpService:GetAsync("https://users.roblox.com/v1/users/search?keyword=" .. HttpService:UrlEncode(username) .. "&limit=1", true)
+	end)
+	
+	if success2 then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(result2)
+		end)
+		if ok and data and data.data and #data.data > 0 then
+			return data.data[1].id
+		end
+	end
+	
+	-- Method 3: Check if player is in server (fallback)
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Name:lower() == username:lower() then
+			-- Try to get their UserId
+			return p.UserId
+		end
+	end
+	
 	return nil
 end
 
 local function getAvatarDescription(userId)
 	local success, result = pcall(function()
-		return HttpService:GetAsync("https://avatar.roblox.com/v1/users/" .. userId .. "/avatar")
+		return HttpService:GetAsync("https://avatar.roblox.com/v1/users/" .. userId .. "/avatar", true)
 	end)
 	
 	if success then
-		return HttpService:JSONDecode(result)
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(result)
+		end)
+		if ok and data then
+			return data
+		end
 	end
 	return nil
 end
@@ -146,17 +179,17 @@ local renderConnection = nil
 
 local function morphCharacter(username)
 	setStatus("Fetching user ID...", Color3.fromRGB(200, 200, 100))
-	task.wait(0.2)
+	task.wait(0.3)
 	
 	-- Get user ID
 	local userId = getUserIdFromUsername(username)
 	if not userId then
-		setStatus("User not found!", Color3.fromRGB(255, 100, 100))
+		setStatus("User '" .. username .. "' not found!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
 	setStatus("Fetching avatar data...", Color3.fromRGB(200, 200, 100))
-	task.wait(0.2)
+	task.wait(0.3)
 	
 	-- Get avatar data
 	local avatarData = getAvatarDescription(userId)
@@ -294,7 +327,7 @@ local function morphCharacter(username)
 		end
 	end)
 	
-	setStatus("Morphed into " .. username .. "! (GLOBAL)", Color3.fromRGB(100, 255, 100))
+	setStatus("Morphed into " .. username .. "!", Color3.fromRGB(100, 255, 100))
 	textBox.Text = ""
 end
 
