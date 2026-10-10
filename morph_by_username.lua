@@ -1,5 +1,6 @@
 -- LocalScript placed in StarterPlayer > StarterPlayerScripts
 -- GLOBAL Avatar Morph - Type ANY username, become their avatar (client-side only)
+-- Uses the correct Roblox API method (PostAsync for username->ID lookup)
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -117,42 +118,16 @@ local function setStatus(msg, color)
 end
 
 local function getUserIdFromUsername(username)
-	-- Try multiple API methods to get user ID
-	
-	-- Method 1: Try the standard get-by-username endpoint
-	local success1, result1 = pcall(function()
-		return HttpService:GetAsync("https://api.roblox.com/users/get-by-username?username=" .. HttpService:UrlEncode(username), true)
+	-- CORRECT METHOD: Use PostAsync with users/v1/usernames/users endpoint
+	local success, result = pcall(function()
+		local url = "https://users.roblox.com/v1/usernames/users"
+		local data = HttpService:JSONEncode({usernames = {username}})
+		local response = HttpService:PostAsync(url, data, Enum.HttpContentType.ApplicationJson, true)
+		return HttpService:JSONDecode(response)
 	end)
 	
-	if success1 then
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(result1)
-		end)
-		if ok and data and data.id then
-			return data.id
-		end
-	end
-	
-	-- Method 2: Try users/search endpoint
-	local success2, result2 = pcall(function()
-		return HttpService:GetAsync("https://users.roblox.com/v1/users/search?keyword=" .. HttpService:UrlEncode(username) .. "&limit=1", true)
-	end)
-	
-	if success2 then
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(result2)
-		end)
-		if ok and data and data.data and #data.data > 0 then
-			return data.data[1].id
-		end
-	end
-	
-	-- Method 3: Check if player is in server (fallback)
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Name:lower() == username:lower() then
-			-- Try to get their UserId
-			return p.UserId
-		end
+	if success and result and result.data and #result.data > 0 then
+		return result.data[1].id
 	end
 	
 	return nil
@@ -160,16 +135,13 @@ end
 
 local function getAvatarDescription(userId)
 	local success, result = pcall(function()
-		return HttpService:GetAsync("https://avatar.roblox.com/v1/users/" .. userId .. "/avatar", true)
+		local url = "https://avatar.roblox.com/v1/users/" .. userId .. "/avatar"
+		local response = HttpService:GetAsync(url, true)
+		return HttpService:JSONDecode(response)
 	end)
 	
-	if success then
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(result)
-		end)
-		if ok and data then
-			return data
-		end
+	if success and result then
+		return result
 	end
 	return nil
 end
@@ -181,7 +153,7 @@ local function morphCharacter(username)
 	setStatus("Fetching user ID...", Color3.fromRGB(200, 200, 100))
 	task.wait(0.3)
 	
-	-- Get user ID
+	-- Get user ID using correct method
 	local userId = getUserIdFromUsername(username)
 	if not userId then
 		setStatus("User '" .. username .. "' not found!", Color3.fromRGB(255, 100, 100))
