@@ -1,5 +1,5 @@
 -- LocalScript placed in StarterPlayer > StarterPlayerScripts
--- Type ANY username and become their avatar
+-- GLOBAL Avatar Morph - Type ANY username, become their avatar (client-side only)
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -52,10 +52,10 @@ local title = Instance.new("TextLabel")
 title.Name = "Title"
 title.Size = UDim2.new(1, 0, 0, 40)
 title.BackgroundTransparency = 1
-title.Text = "Morph by Username"
+title.Text = "Morph by Username (GLOBAL)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 24
+title.TextSize = 20
 title.Parent = frame
 
 local textBox = Instance.new("TextBox")
@@ -64,7 +64,7 @@ textBox.Size = UDim2.new(1, -20, 0, 45)
 textBox.Position = UDim2.new(0, 10, 0, 50)
 textBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-textBox.PlaceholderText = "Enter Username"
+textBox.PlaceholderText = "Enter ANY Username"
 textBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
 textBox.Text = ""
 textBox.Font = Enum.Font.Gotham
@@ -104,10 +104,10 @@ status.Name = "Status"
 status.Size = UDim2.new(1, -20, 0, 35)
 status.Position = UDim2.new(0, 10, 0, 170)
 status.BackgroundTransparency = 1
-status.Text = "Ready to morph"
+status.Text = "Ready to morph GLOBALLY"
 status.TextColor3 = Color3.fromRGB(150, 200, 150)
 status.Font = Enum.Font.Gotham
-status.TextSize = 14
+status.TextSize = 12
 status.TextWrapped = true
 status.Parent = frame
 
@@ -130,83 +130,97 @@ local function getUserIdFromUsername(username)
 	return nil
 end
 
-local function getAvatarAssets(userId)
+local function getAvatarDescription(userId)
 	local success, result = pcall(function()
 		return HttpService:GetAsync("https://avatar.roblox.com/v1/users/" .. userId .. "/avatar")
 	end)
 	
 	if success then
-		local data = HttpService:JSONDecode(result)
-		return data
+		return HttpService:JSONDecode(result)
 	end
 	return nil
 end
 
 local morphedCharacter = nil
+local renderConnection = nil
 
 local function morphCharacter(username)
 	setStatus("Fetching user ID...", Color3.fromRGB(200, 200, 100))
-	task.wait(0.3)
+	task.wait(0.2)
 	
-	-- Get user ID from username
+	-- Get user ID
 	local userId = getUserIdFromUsername(username)
 	if not userId then
 		setStatus("User not found!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
-	setStatus("Fetching avatar...", Color3.fromRGB(200, 200, 100))
-	task.wait(0.3)
+	setStatus("Fetching avatar data...", Color3.fromRGB(200, 200, 100))
+	task.wait(0.2)
 	
 	-- Get avatar data
-	local avatarData = getAvatarAssets(userId)
+	local avatarData = getAvatarDescription(userId)
 	if not avatarData then
-		setStatus("Failed to fetch avatar!", Color3.fromRGB(255, 100, 100))
+		setStatus("Failed to load avatar!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
 	setStatus("Creating morph...", Color3.fromRGB(200, 200, 100))
-	task.wait(0.3)
 	
-	-- Get current character
 	local currentChar = player.Character
 	if not currentChar then
-		setStatus("Spawn your character first!", Color3.fromRGB(255, 100, 100))
+		setStatus("Spawn first!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
 	local hrp = currentChar:FindFirstChild("HumanoidRootPart")
 	if not hrp then
-		setStatus("No HumanoidRootPart found!", Color3.fromRGB(255, 100, 100))
+		setStatus("Error: No HumanoidRootPart!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
 	local saveCFrame = hrp.CFrame
+	local saveVelocity = hrp.AssemblyLinearVelocity
 	
-	-- Remove old morphed character if it exists
-	if morphedCharacter and morphedCharacter.Parent then
-		morphedCharacter:Destroy()
-		morphedCharacter = nil
+	-- Disconnect old render connection
+	if renderConnection then
+		renderConnection:Disconnect()
+		renderConnection = nil
 	end
 	
-	-- Create humanoid description from avatar data
+	-- Remove old morph
+	if morphedCharacter and morphedCharacter.Parent then
+		morphedCharacter:Destroy()
+	end
+	
+	-- Create HumanoidDescription
 	local desc = Instance.new("HumanoidDescription")
 	
-	-- Default body colors (R15)
-	desc.HeadColor3 = Color3.fromRGB(255, 224, 192)
-	desc.TorsoColor3 = Color3.fromRGB(255, 0, 0)
-	desc.LeftArmColor3 = Color3.fromRGB(255, 224, 192)
-	desc.RightArmColor3 = Color3.fromRGB(255, 224, 192)
-	desc.LeftLegColor3 = Color3.fromRGB(0, 0, 139)
-	desc.RightLegColor3 = Color3.fromRGB(0, 0, 139)
+	-- Set body colors from avatar data
+	if avatarData.bodyColors then
+		local bc = avatarData.bodyColors
+		local function getColor(colorId)
+			if colorId then
+				local success, color = pcall(function() return BrickColor.new(colorId).Color end)
+				return success and color or Color3.fromRGB(255, 224, 192)
+			end
+			return Color3.fromRGB(255, 224, 192)
+		end
+		desc.HeadColor3 = getColor(bc.headColorId)
+		desc.TorsoColor3 = getColor(bc.torsoColorId)
+		desc.LeftArmColor3 = getColor(bc.leftArmColorId)
+		desc.RightArmColor3 = getColor(bc.rightArmColorId)
+		desc.LeftLegColor3 = getColor(bc.leftLegColorId)
+		desc.RightLegColor3 = getColor(bc.rightLegColorId)
+	end
 	
 	-- Add accessories from avatar
 	local accessories = {}
 	if avatarData.assets then
 		for _, asset in ipairs(avatarData.assets) do
-			if asset.assetType and asset.assetType.name and asset.id then
+			if asset.id and asset.assetType then
 				local assetType = asset.assetType.name
-				-- Skip body parts, only add accessories and wearables
+				-- Add all non-body-part assets
 				if assetType ~= "Head" and assetType ~= "Torso" and assetType ~= "LeftArm" and assetType ~= "RightArm" and assetType ~= "LeftLeg" and assetType ~= "RightLeg" then
 					table.insert(accessories, asset.id)
 				end
@@ -214,13 +228,22 @@ local function morphCharacter(username)
 		end
 	end
 	
+	-- Set scale
+	if avatarData.scales then
+		local scales = avatarData.scales
+		desc.HeadScale = scales.head or 1
+		desc.BodyHeightScale = scales.bodyHeight or 1
+		desc.BodyWidthScale = scales.bodyWidth or 1
+		desc.HeadRadiusScale = scales.head or 1
+	end
+	
 	if #accessories > 0 then
 		desc.Accessories = accessories
 	end
 	
-	-- Create new character
+	-- Create new character model
 	morphedCharacter = Instance.new("Model")
-	morphedCharacter.Name = "MorphedCharacter"
+	morphedCharacter.Name = "MorphedChar"
 	
 	local humanoid = Instance.new("Humanoid")
 	humanoid.Parent = morphedCharacter
@@ -228,10 +251,11 @@ local function morphCharacter(username)
 	
 	morphedCharacter.Parent = workspace
 	
-	-- Move to current position
+	-- Position the morph
 	local newRoot = morphedCharacter:FindFirstChild("HumanoidRootPart")
 	if newRoot then
 		newRoot.CFrame = saveCFrame
+		newRoot.AssemblyLinearVelocity = saveVelocity
 	end
 	
 	-- Hide original character
@@ -242,30 +266,36 @@ local function morphCharacter(username)
 		end
 	end
 	
-	-- Keep synced with camera and movement
-	local connection
-	connection = RunService.RenderStepped:Connect(function()
-		if currentChar and currentChar.Parent and morphedCharacter and morphedCharacter.Parent then
-			local origRoot = currentChar:FindFirstChild("HumanoidRootPart")
-			local morphRoot = morphedCharacter:FindFirstChild("HumanoidRootPart")
-			if origRoot and morphRoot then
-				morphRoot.CFrame = origRoot.CFrame
-				morphRoot.Velocity = origRoot.Velocity
-				
-				-- Sync animations
-				local origHumanoid = currentChar:FindFirstChildOfClass("Humanoid")
-				local morphHumanoid = morphedCharacter:FindFirstChildOfClass("Humanoid")
-				if origHumanoid and morphHumanoid then
-					morphHumanoid.MoveDirection = origHumanoid.MoveDirection
-					morphHumanoid:MoveTo(origHumanoid.MoveDirection)
-				end
+	-- Sync every frame
+	renderConnection = RunService.RenderStepped:Connect(function()
+		if not (currentChar and currentChar.Parent and morphedCharacter and morphedCharacter.Parent) then
+			if renderConnection then
+				renderConnection:Disconnect()
+				renderConnection = nil
 			end
-		elseif not (morphedCharacter and morphedCharacter.Parent) then
-			connection:Disconnect()
+			return
+		end
+		
+		local origRoot = currentChar:FindFirstChild("HumanoidRootPart")
+		local morphRoot = morphedCharacter:FindFirstChild("HumanoidRootPart")
+		
+		if origRoot and morphRoot then
+			-- Sync position and velocity
+			morphRoot.CFrame = origRoot.CFrame
+			morphRoot.AssemblyLinearVelocity = origRoot.AssemblyLinearVelocity
+			
+			-- Sync animations
+			local origHum = currentChar:FindFirstChildOfClass("Humanoid")
+			local morphHum = morphedCharacter:FindFirstChildOfClass("Humanoid")
+			
+			if origHum and morphHum then
+				morphHum:MoveTo(origHum.MoveDirection * 16)
+			end
 		end
 	end)
 	
-	setStatus("Morphed into " .. username .. "!", Color3.fromRGB(100, 255, 100))
+	setStatus("Morphed into " .. username .. "! (GLOBAL)", Color3.fromRGB(100, 255, 100))
+	textBox.Text = ""
 end
 
 button.MouseButton1Click:Connect(function()
@@ -277,11 +307,22 @@ button.MouseButton1Click:Connect(function()
 	end
 	
 	morphCharacter(username)
-	textBox.Text = ""
 end)
 
 textBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
 		button:Fire("MouseButton1Click")
+	end
+end)
+
+-- Cleanup on death
+player.CharacterAdded:Connect(function(newChar)
+	if morphedCharacter and morphedCharacter.Parent then
+		morphedCharacter:Destroy()
+		morphedCharacter = nil
+	end
+	if renderConnection then
+		renderConnection:Disconnect()
+		renderConnection = nil
 	end
 end)
