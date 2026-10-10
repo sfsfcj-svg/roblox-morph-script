@@ -1,8 +1,9 @@
 -- LocalScript placed in StarterPlayer > StarterPlayerScripts
--- Morph by Username with Avatar API (Works Globally)
+-- Client-sided Morph by Username (Avatar API - Only you see the morph)
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local screenGui = Instance.new("ScreenGui")
@@ -90,7 +91,6 @@ local bCorner = Instance.new("UICorner")
 bCorner.CornerRadius = UDim.new(0, 8)
 bCorner.Parent = button
 
--- Hover effect
 button.MouseEnter:Connect(function()
 	button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
 end)
@@ -142,62 +142,63 @@ local function getAvatarAssets(userId)
 	return nil
 end
 
-local function createMorphFromAvatar(avatarData, position)
-	if not avatarData or not avatarData.assets then
+local function getAvatarBodyColors(userId)
+	local success, result = pcall(function()
+		return HttpService:GetAsync("https://avatar.roblox.com/v1/avatar-fetch/metadata?userId=" .. userId)
+	end)
+	
+	if success then
+		return HttpService:JSONDecode(result)
+	end
+	return nil
+end
+
+local function createHumanoidDescriptionFromAvatar(userId)
+	local avatarData = getAvatarAssets(userId)
+	if not avatarData then
 		return nil
 	end
 
-	-- Create a new character model
-	local character = Instance.new("Model")
-	character.Name = "Character"
+	local desc = Instance.new("HumanoidDescription")
 	
-	-- Create humanoid
-	local humanoid = Instance.new("Humanoid")
-	humanoid.Parent = character
+	-- Set body part colors
+	desc.HeadColor3 = Color3.fromRGB(255, 224, 192)
+	desc.TorsoColor3 = Color3.fromRGB(255, 0, 0)
+	desc.LeftArmColor3 = Color3.fromRGB(255, 224, 192)
+	desc.RightArmColor3 = Color3.fromRGB(255, 224, 192)
+	desc.LeftLegColor3 = Color3.fromRGB(0, 0, 139)
+	desc.RightLegColor3 = Color3.fromRGB(0, 0, 139)
 	
-	-- Create HumanoidRootPart
-	local rootPart = Instance.new("Part")
-	rootPart.Name = "HumanoidRootPart"
-	rootPart.Shape = Enum.PartType.Ball
-	rootPart.Size = Vector3.new(2, 2, 2)
-	rootPart.CanCollide = false
-	rootPart.CFrame = position
-	rootPart.TopSurface = Enum.SurfaceType.Smooth
-	rootPart.BottomSurface = Enum.SurfaceType.Smooth
-	rootPart.Parent = character
+	-- Try to get actual colors from avatar
+	local colorData = getAvatarBodyColors(userId)
+	if colorData and colorData.bodyColors then
+		local colors = colorData.bodyColors
+		if colors.headColorId then desc.HeadColor3 = BrickColor.new(colors.headColorId).Color end
+		if colors.torsoColorId then desc.TorsoColor3 = BrickColor.new(colors.torsoColorId).Color end
+		if colors.leftArmColorId then desc.LeftArmColor3 = BrickColor.new(colors.leftArmColorId).Color end
+		if colors.rightArmColorId then desc.RightArmColor3 = BrickColor.new(colors.rightArmColorId).Color end
+		if colors.leftLegColorId then desc.LeftLegColor3 = BrickColor.new(colors.leftLegColorId).Color end
+		if colors.rightLegColorId then desc.RightLegColor3 = BrickColor.new(colors.rightLegColorId).Color end
+	end
 	
-	-- Add humanoid description
-	local desc = Instance.new("Humanoid")
-	
-	-- Create a humanoid description from avatar data
-	local humanoidDesc = Instance.new("HumanoidDescription")
-	
-	-- Process assets
-	for _, asset in ipairs(avatarData.assets) do
-		local assetType = asset.assetType.name
-		
-		if assetType == "Head" then
-			humanoidDesc:SetAccessories({asset.id}, false)
-		elseif assetType == "Face" then
-			humanoidDesc.Face = "rbxasset://textures/face.png"
+	-- Add accessories/assets
+	if avatarData.assets then
+		for _, asset in ipairs(avatarData.assets) do
+			if asset.assetType and asset.assetType.name then
+				local assetType = asset.assetType.name
+				if assetType ~= "Head" and assetType ~= "Torso" and assetType ~= "LeftArm" and assetType ~= "RightArm" and assetType ~= "LeftLeg" and assetType ~= "RightLeg" then
+					-- Add as accessory
+					table.insert(desc.Accessories, asset.id)
+				end
+			end
 		end
 	end
 	
-	-- Set body colors
-	if avatarData.bodyColors then
-		humanoidDesc.HeadColor3 = Color3.fromRGB(
-			avatarData.bodyColors.headColorId or 1,
-			avatarData.bodyColors.headColorId or 1,
-			avatarData.bodyColors.headColorId or 1
-		)
-	end
-	
-	-- Create standard rig
-	humanoidDesc:LoadDescription(humanoidDesc)
-	
-	character.Parent = workspace
-	return character
+	return desc
 end
+
+local originalCharacter = player.Character
+local morphedCharacter = nil
 
 local function morphCharacter(username)
 	setStatus("Fetching user data...", Color3.fromRGB(200, 200, 100))
@@ -209,18 +210,20 @@ local function morphCharacter(username)
 		return
 	end
 	
-	setStatus("Fetching avatar data...", Color3.fromRGB(200, 200, 100))
+	setStatus("Fetching avatar...", Color3.fromRGB(200, 200, 100))
+	task.wait(0.5)
 	
-	-- Get avatar data
-	local avatarData = getAvatarAssets(userId)
-	if not avatarData then
+	-- Get avatar description
+	local desc = createHumanoidDescriptionFromAvatar(userId)
+	if not desc then
 		setStatus("Failed to fetch avatar!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
 	setStatus("Creating morph...", Color3.fromRGB(200, 200, 100))
+	task.wait(0.5)
 	
-	-- Get current character position
+	-- Get current character
 	local currentChar = player.Character
 	if not currentChar then
 		setStatus("Spawn your character first!", Color3.fromRGB(255, 100, 100))
@@ -228,39 +231,107 @@ local function morphCharacter(username)
 	end
 	
 	local hrp = currentChar:FindFirstChild("HumanoidRootPart")
-	local morphPosition = hrp and hrp.CFrame or CFrame.new()
-	
-	-- Create morph
-	local morphChar = createMorphFromAvatar(avatarData, morphPosition)
-	if not morphChar then
-		setStatus("Failed to create morph!", Color3.fromRGB(255, 100, 100))
+	if not hrp then
+		setStatus("No HumanoidRootPart found!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
-	-- Switch character
-	player.Character = morphChar
-	
-	-- Remove old character
-	task.wait(0.2)
-	if currentChar and currentChar.Parent then
-		currentChar:Destroy()
+	-- Remove old morphed character if it exists
+	if morphedCharacter and morphedCharacter.Parent then
+		morphedCharacter:Destroy()
 	end
+	
+	-- Create new character from description
+	morphedCharacter = Instance.new("Model")
+	morphedCharacter.Name = "MorphedCharacter"
+	morphedCharacter.Parent = workspace
+	
+	-- Create humanoid
+	local humanoid = Instance.new("Humanoid")
+	humanoid.Parent = morphedCharacter
+	
+	-- Load description
+	humanoid:LoadDescription(desc)
+	
+	-- Teleport to current position
+	local newRoot = morphedCharacter:FindFirstChild("HumanoidRootPart")
+	if newRoot then
+		newRoot.CFrame = hrp.CFrame
+	end
+	
+	-- Make original character invisible and uncollidable
+	for _, part in pairs(currentChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Transparency = 1
+			part.CanCollide = false
+		end
+	end
+	
+	-- Parent original character to morphed character so it follows
+	for _, part in pairs(currentChar:GetChildren()) do
+		if part:IsA("BasePart") or part:IsA("Humanoid") or part:IsA("BodyVelocity") or part:IsA("BodyGyro") then
+			-- Keep these in original
+		end
+	end
+	
+	-- Update on every frame to keep sync
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if currentChar and currentChar.Parent and morphedCharacter and morphedCharacter.Parent then
+			local origRoot = currentChar:FindFirstChild("HumanoidRootPart")
+			local morphRoot = morphedCharacter:FindFirstChild("HumanoidRootPart")
+			if origRoot and morphRoot then
+				morphRoot.CFrame = origRoot.CFrame
+				-- Sync velocity
+				if origRoot:FindFirstChild("BodyVelocity") then
+					morphRoot.Velocity = origRoot.Velocity
+				end
+			end
+		elseif not (morphedCharacter and morphedCharacter.Parent) then
+			connection:Disconnect()
+		end
+	end)
 	
 	setStatus("Morphed into " .. username .. "!", Color3.fromRGB(100, 255, 100))
 end
 
+local function undoMorph()
+	if morphedCharacter and morphedCharacter.Parent then
+		morphedCharacter:Destroy()
+		morphedCharacter = nil
+	end
+	
+	local currentChar = player.Character
+	if currentChar then
+		for _, part in pairs(currentChar:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Transparency = 0
+				part.CanCollide = true
+			end
+		end
+	end
+	
+	setStatus("Morph removed", Color3.fromRGB(150, 200, 150))
+end
+
 button.MouseButton1Click:Connect(function()
-	local username = textBox.Text:match("^%s*(.-)%s*$") -- Trim whitespace
+	local username = textBox.Text:match("^%s*(.-)%s*$")
 	
 	if username == "" then
 		setStatus("Enter a username!", Color3.fromRGB(255, 100, 100))
 		return
 	end
 	
+	if username:lower() == "undo" or username:lower() == "remove" then
+		undoMorph()
+		textBox.Text = ""
+		return
+	end
+	
 	morphCharacter(username)
+	textBox.Text = ""
 end)
 
--- Allow Enter key to morph
 textBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
 		button:Fire("MouseButton1Click")
